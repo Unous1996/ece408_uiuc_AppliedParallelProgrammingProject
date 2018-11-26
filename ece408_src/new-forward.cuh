@@ -32,7 +32,7 @@ __global__ void forward_kernel(float *y, const float *x, const float *k, const i
     #define k4d(i3, i2, i1, i0) k[(i3) * (C * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
 
     #define X_shared2d(i1, i0) X_shared[i1 * X_tile_width + i0]
-    #define W_shared2d(i1, i0) W_shared[i1 * X_tile_width + i0]
+    #define W_shared2d(i1, i0) W_shared[i1 * K+ i0]
 
     int W_grid = ceil(W_out / (TILE_WIDTH * 1.0));
     int H_grid = ceil(H_out / (TILE_WIDTH * 1.0));
@@ -52,27 +52,32 @@ __global__ void forward_kernel(float *y, const float *x, const float *k, const i
         
         if(h0 < K && w0 < K){
             //W_shared2d(h0, w0) = k4d(m, c, h0, w0);
-            W_shared[h0 * X_tile_width + w0] = k4d(m, c, h0, w0);
+            W_shared[h0 * K + w0] = k4d(m, c, h0, w0);
         }
         __syncthreads();
 
         for(int i=h; i < h_base + X_tile_width; i+= TILE_WIDTH){
             for(int j=w; j < w_base + X_tile_width; j+= TILE_WIDTH)
                 //X_shared2d(i-h_base,j-w_base) = x4d(b,c,h,w);
-                X_shared[(i-h_base) * X_tile_width+ j-w_base] = x4d(b,c,h,w);
+                if(h < H && w < W){
+                    X_shared[(i-h_base) * X_tile_width+ j-w_base] = x4d(b,c,h,w);                    
+                }
+                else{
+                    X_shared[(i-h_base) * X_tile_width+ j-w_base] = 0;
+                }
         }
         __syncthreads();
 
         for (int p = 0; p < K; p++) {
             for (int q = 0; q < K; q++) {
                 //acc += X_shared2d(h+p,w+q) * W_shared2d(p,q);
-                acc += X_shared[ (h+p) * X_tile_width + w+q] * W_shared[(p) * X_tile_width + q];
+                acc += X_shared[ (h0+p) * X_tile_width + w0+q] * W_shared[(p) * K + q];
             }
         }
         __syncthreads();
     }
 
-    if (h < H_out && w < W_out) {
+    if (h < H_out && w < W_out){
         y4d(b, m, h, w) = acc;
     }   
     //(void)H_out; // silence declared but never referenced warning. remove this line when you start working
@@ -117,9 +122,8 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
     // dim3 blockDim(0);
     dim3 blockDim(TILE_WIDTH, TILE_WIDTH, 1);
     dim3 gridDim(M, Total_grid, B);
-
-    forward_kernel<<<gridDim, blockDim>>>(y.dptr_,x.dptr_,w.dptr_, B, M, C, H, W, K);
-
+    size_t shmem_size = sizeof(float) * ( (TILE_WIDTH + K-1)*(TILE_WIDTH + K-1) + K*K ); 
+    forward_kernel<<<gridDim, blockDim, shmem_size>>>(y.dptr_,x.dptr_,w.dptr_, B, M, C, H, W, K);
     // Call the kernel
     //forward_kernel<<<gridDim, blockDim, 0, s>>>(y.dptr_,x.dptr_,w.dptr_, B,M,C,H,W,K);
 
