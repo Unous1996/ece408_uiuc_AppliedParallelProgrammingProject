@@ -31,58 +31,48 @@ __global__ void forward_kernel(float *y, const float *x, const float *k, const i
     #define x4d(i3, i2, i1, i0) x[(i3) * (C * H * W) + (i2) * (H * W) + (i1) * (W) + i0]
     #define k4d(i3, i2, i1, i0) k[(i3) * (C * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
 
-    #define X_shared2d(i1, i0) X_shared[i1 * X_tile_width + i0]
-    #define W_shared2d(i1, i0) W_shared[i1 * K+ i0]
-
     int W_grid = ceil(W_out / (TILE_WIDTH * 1.0));
     int H_grid = ceil(H_out / (TILE_WIDTH * 1.0));
 
     int h0 = threadIdx.y;
     int w0 = threadIdx.x;
-    int h_base = blockIdx.y / W_grid * TILE_WIDTH;
-    int w_base = blockIdx.y % W_grid * TILE_WIDTH;
+    int h_base = (blockIdx.y / W_grid) * TILE_WIDTH;
+    int w_base = (blockIdx.y % W_grid) * TILE_WIDTH;
 
     int m = blockIdx.x;
     int h = h_base + h0;
     int w = w_base + w0;
     int b = blockIdx.z;
 
-    float acc = 0;
+    float acc = 0.0;
     for (int c = 0; c < C; c++){
-        
+
         if(h0 < K && w0 < K){
-            //W_shared2d(h0, w0) = k4d(m, c, h0, w0);
             W_shared[h0 * K + w0] = k4d(m, c, h0, w0);
-        }
+        }   
         __syncthreads();
 
         for(int i=h; i < h_base + X_tile_width; i+= TILE_WIDTH){
             for(int j=w; j < w_base + X_tile_width; j+= TILE_WIDTH)
-                //X_shared2d(i-h_base,j-w_base) = x4d(b,c,h,w);
-                if(h < H && w < W){
-                    X_shared[(i-h_base) * X_tile_width+ j-w_base] = x4d(b,c,h,w);                    
-                }
-                else{
-                    X_shared[(i-h_base) * X_tile_width+ j-w_base] = 0;
-                }
+                X_shared[(i-h_base) * X_tile_width + j-w_base] = x4d(b,c,h,w);                    
         }
         __syncthreads();
 
-        for (int p = 0; p < K; p++) {
-            for (int q = 0; q < K; q++) {
-                //acc += X_shared2d(h+p,w+q) * W_shared2d(p,q);
-                acc += X_shared[ (h0+p) * X_tile_width + w0+q] * W_shared[(p) * K + q];
+        for (int p = 0; p < K; p++){
+            for (int q = 0; q < K; q++){
+                if(h0+p<X_tile_width && w0+q < X_tile_width){
+                    acc += X_shared[(h0+p) * X_tile_width + w0+q] * W_shared[(p) * K + q]; 
+                }
             }
         }
         __syncthreads();
     }
 
-    if (h < H_out && w < W_out){
+    if(h < H_out && w < W_out){
         y4d(b, m, h, w) = acc;
     }   
     //(void)H_out; // silence declared but never referenced warning. remove this line when you start working
     //(void)W_out; // silence declared but never referenced warning. remove this line when you start working
-
     #undef y4d
     #undef x4d
     #undef k4d
@@ -129,7 +119,6 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
 
     // Use MSHADOW_CUDA_CALL to check for CUDA runtime errors.
     MSHADOW_CUDA_CALL(cudaDeviceSynchronize());
-
 }
 
 /* 
