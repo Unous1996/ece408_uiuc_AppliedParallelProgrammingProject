@@ -12,12 +12,6 @@ namespace op
 
 __global__ void forward_kernel(float *y, const float *x, const float *k, const int B, const int M, const int C, const int H, const int W, const int K)
 {
-    /*
-    Modify this function to implement the forward pass described in Chapter 16.
-    We have added an additional dimension to the tensors to support an entire mini-batch
-    The goal here is to be correct AND fast.
-    We have some nice #defs for you below to simplify indexing. Feel free to use them, or create your own.
-    */
     
     const int H_out = H - K + 1;
     const int W_out = W - K + 1;
@@ -54,7 +48,12 @@ __global__ void forward_kernel(float *y, const float *x, const float *k, const i
 
         for(int i=h; i < h_base + X_tile_width; i+= TILE_WIDTH){
             for(int j=w; j < w_base + X_tile_width; j+= TILE_WIDTH)
-                X_shared[(i-h_base) * X_tile_width + j-w_base] = x4d(b,c,h,w);                    
+                if(i < H && j < W){
+                    X_shared[(i-h_base) * X_tile_width + j-w_base] = x4d(b,c,i,j);  
+                }
+                else{
+                    X_shared[(i-h_base) * X_tile_width + j-w_base] = 0.0;
+                }
         }
         __syncthreads();
 
