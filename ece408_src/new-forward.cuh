@@ -15,7 +15,7 @@ namespace op
 
 __global__ void forward_kernel(float *y, const float *x, const float *k, const int B, const int M, const int C, const int H, const int W, const int K)
 {
-        /*
+    /*
     Modify this function to implement the forward pass described in Chapter 16.
     We have added an additional dimension to the tensors to support an entire mini-batch
     The goal here is to be correct AND fast.
@@ -93,15 +93,11 @@ __global__ void unroll_kernel(int C, int H, int W, int K, float *x, float *x_unr
     }
 }
 
-__global__ void matrixMultiplyShared(float *A, float *B, float *C,
-                                     int numARows, int numAColumns,
-                                     int numBRows, int numBColumns,
-                                     int numCRows, int numCColumns){
+__global__ void matrixMultiplyShared(float *A, float *B, float *C,int numARows, int numAColumns,int numBRows, int numBColumns, int numCRows, int numCColumns){
   //@@ Insert code to implement matrix multiplication here
   //@@ You have to use shared memory for this MP
-  const int TILE_WIDTH = 32;
-  __shared__ float MdA[TILE_WIDTH][TILE_WIDTH];
-  __shared__ float MdB[TILE_WIDTH][TILE_WIDTH];
+  __shared__ float MdA[32][32];
+  __shared__ float MdB[32][32];
   int bx = blockIdx.x, by = blockIdx.y, tx = threadIdx.x, ty = threadIdx.y;
   int Row = by * TILE_WIDTH + ty;
   int Col = bx * TILE_WIDTH + tx;
@@ -167,7 +163,7 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
     int num_threads = C * H_out * W_out;
 
     float* device_X_unroll;
-    device_X_unroll = cudaMalloc((void**)&device_X_unroll, B * W_unroll * H_unroll * sizeof(float));
+    cudaMalloc((void**)&device_X_unroll, B * W_unroll * H_unroll * sizeof(float));
 
     dim3 blockDim1(UNROLL_BLOCK_SIZE,B,1);
     dim3 gridDim1(ceil(num_threads * 1.0/(UNROLL_BLOCK_SIZE)),1,1);    
@@ -183,7 +179,7 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
     numCRows = numAColumns;
     numCColumns = numARows;
 
-    dim3 blockDim2(ceil(numBColumns*1.0/BLOCK_SIZE),ceil(numARows*1.0/BLOCK_SIZE),1);
+    dim3 blockDim2(ceil(numBColumns*1.0/MATRIX_MULTIPLY_BLOCK_SIZE),ceil(numARows*1.0/MATRIX_MULTIPLY_BLOCK_SIZE),1);
     dim3 gridDim2(MATRIX_MULTIPLY_BLOCK_SIZE,MATRIX_MULTIPLY_BLOCK_SIZE,1);
     /*
     void matrixMultiplyShared(float *A, float *B, float *C,
@@ -191,10 +187,9 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
                                      int numBRows, int numBColumns,
                                      int numCRows, int numCColumns)
     */
-    matrixMultiplyShared<<<gridDim2,blockDim2>>>(w,device_X_unroll, y, numARows, numAColumns, numBRows, numBColumns, numCRows, numCColumns);
+    matrixMultiplyShared<<<gridDim2,blockDim2>>>(w.dptr_, device_X_unroll, y.dptr_, numARows, numAColumns, numBRows, numBColumns, numCRows, numCColumns);
     // Call the kernel
     //forward_kernel<<<gridDim, blockDim, 0, s>>>(y.dptr_,x.dptr_,w.dptr_, B,M,C,H,W,K);
-
     // Use MSHADOW_CUDA_CALL to check for CUDA runtime errors.
     cudaFree(device_X_unroll);
     MSHADOW_CUDA_CALL(cudaDeviceSynchronize());
