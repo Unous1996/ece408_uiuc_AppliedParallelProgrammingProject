@@ -1,4 +1,3 @@
-
 #ifndef MXNET_OPERATOR_NEW_FORWARD_CUH_
 #define MXNET_OPERATOR_NEW_FORWARD_CUH_
 
@@ -13,55 +12,12 @@ namespace mxnet
 namespace op
 {
 
-__global__ void forward_kernel(float *y, const float *x, const float *k, const int B, const int M, const int C, const int H, const int W, const int K)
-{
-    /*
-    Modify this function to implement the forward pass described in Chapter 16.
-    We have added an additional dimension to the tensors to support an entire mini-batch
-    The goal here is to be correct AND fast.
-    We have some nice #defs for you below to simplify indexing. Feel free to use them, or create your own.
-    */
-    const int H_out = H - K + 1;
-    const int W_out = W - K + 1;
-    // An example use of these macros:
-    // float a = y4d(0,0,0,0)
-    // y4d(0,0,0,0) = a
-    #define y4d(i3, i2, i1, i0) y[(i3) * (M * H_out * W_out) + (i2) * (H_out * W_out) + (i1) * (W_out) + i0]
-    #define x4d(i3, i2, i1, i0) x[(i3) * (C * H * W) + (i2) * (H * W) + (i1) * (W) + i0]
-    #define k4d(i3, i2, i1, i0) k[(i3) * (C * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
-
-    int W_grid = ceil(W_out / (TILE_WIDTH * 1.0));
-    int H_grid = ceil(H_out / (TILE_WIDTH * 1.0));
-
-    int m = blockIdx.x;
-    int h = blockIdx.y / W_grid * TILE_WIDTH + threadIdx.y;
-    int w = blockIdx.y % W_grid * TILE_WIDTH + threadIdx.x;
-    int b = blockIdx.z;
-
-    float acc = 0;
-    for (int c = 0; c < C; c++) {
-        for (int p = 0; p < K; p++) {
-            for (int q = 0; q < K; q++) {
-                    acc += x4d(b, c, h + p, w + q) * k4d(m, c, p, q);
-            }
-        }
-    }
-    if (h < H_out && w < W_out) {
-        y4d(b, m, h, w) = acc;
-    }   
-    //(void)H_out; // silence declared but never referenced warning. remove this line when you start working
-    //(void)W_out; // silence declared but never referenced warning. remove this line when you start working 
-    #undef y4d
-    #undef x4d
-    #undef k4d
-}
-
 __global__ void unroll_kernel(int C, int H, int W, int K, float *x, float *x_unroll){
     
     int channel, serial;
     
     int h_unroll, w_unroll;
-    int w_base;
+    int h_base;
     int p,q;
     
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -71,7 +27,7 @@ __global__ void unroll_kernel(int C, int H, int W, int K, float *x, float *x_unr
     int W_out = W - K + 1;
 
     int W_unroll = H_out * W_out;
-    int H_unroll = W_unroll * K * K * C;
+    int H_unroll = K * K * C;
 
     int h_out_index, w_out_index;
 
@@ -84,11 +40,11 @@ __global__ void unroll_kernel(int C, int H, int W, int K, float *x, float *x_unr
         h_out_index = serial / W_out;
         w_out_index = serial % W_out;
         w_unroll = h_out_index * W_out + w_out_index;
-        w_base = channel * K * K;
+        h_base = channel * K * K;
         for(p = 0; p < K; p++)
             for(q = 0; q < K; q++){
-                h_unroll = w_base + p * K + q;
-                x_unroll3d(b, h_unroll, w_unroll) = x4d(b, channel, h_out_index + p, w_unroll + q);
+                h_unroll = h_base + p * K + q;
+                x_unroll3d(b, h_unroll, w_unroll) = x4d(b, channel, h_out_index + p, w_out_index + q);
             }
     }
 }
@@ -157,21 +113,27 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
     const int H_out = H - K + 1;
     const int W_out = W - K + 1;
 
+    printf("Expected:\n");
+    printf("B = %d\n", B);
+    printf("M = %d\n", M);
+    printf("H_out = %d\n", H_out);
+    printf("W_out = %d\n", W_out);
+    
     int W_unroll = H_out * W_out;
-    int H_unroll = W_unroll * K * K * C;
+    int H_unroll = K * K * C;
 
     int num_threads = C * H_out * W_out;
 
     float* device_X_unroll;
+
     cudaMalloc((void**)&device_X_unroll, B * W_unroll * H_unroll * sizeof(float));
 
     dim3 blockDim1(UNROLL_BLOCK_SIZE,B,1);
     dim3 gridDim1(ceil(num_threads * 1.0/(UNROLL_BLOCK_SIZE)),1,1);    
-    //void unroll_kernel(int C, int H, int W, int K, float *x, float *x_unroll)
+    
     unroll_kernel<<<gridDim1, blockDim1>>>(C, H, W, K, x.dptr_, device_X_unroll);
-    
     int numARows, numAColumns, numBRows, numBColumns, numCRows, numCColumns;
-    
+
     numBRows = H_unroll;
     numBColumns =  W_unroll;
     numAColumns =  numBRows;
@@ -181,6 +143,7 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
 
     dim3 blockDim2(ceil(numBColumns*1.0/MATRIX_MULTIPLY_BLOCK_SIZE),ceil(numARows*1.0/MATRIX_MULTIPLY_BLOCK_SIZE),1);
     dim3 gridDim2(MATRIX_MULTIPLY_BLOCK_SIZE,MATRIX_MULTIPLY_BLOCK_SIZE,1);
+
     /*
     void matrixMultiplyShared(float *A, float *B, float *C,
                                      int numARows, int numAColumns,
@@ -191,9 +154,15 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
     // Call the kernel
     //forward_kernel<<<gridDim, blockDim, 0, s>>>(y.dptr_,x.dptr_,w.dptr_, B,M,C,H,W,K);
     // Use MSHADOW_CUDA_CALL to check for CUDA runtime errors.
+
+    printf("Your Output:\n");
+    printf("B = %d\n", y.shape_[0]);
+    printf("M = %d\n", y.shape_[1]);
+    printf("H_out = %d\n", y.shape_[2]);
+    printf("W_out = %d\n", y.shape_[3]);
+    
     cudaFree(device_X_unroll);
     MSHADOW_CUDA_CALL(cudaDeviceSynchronize());
-
 }
 
 /* 
