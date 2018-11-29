@@ -54,7 +54,7 @@ __global__ void matrixMultiplyShared(float *A, float *B, float *C,int numARows, 
   //@@ You have to use shared memory for this MP
   __shared__ float MdA[32][32];
   __shared__ float MdB[32][32];
-  int bx = blockIdx.x, by = blockIdx.y, tx = threadIdx.x, ty = threadIdx.y, tz = threadIdx.z;
+  int bx = blockIdx.x, by = blockIdx.y, tx = threadIdx.x, ty = threadIdx.y, bz = blockIdx.z;
   int Row = by * TILE_WIDTH + ty;
   int Col = bx * TILE_WIDTH + tx;
 
@@ -73,7 +73,7 @@ __global__ void matrixMultiplyShared(float *A, float *B, float *C,int numARows, 
     }
     
     if(ph*TILE_WIDTH+ty < numBRows && Col < numBColumns){
-       MdB[ty][tx] = B3d(tz,ph*TILE_WIDTH+ty,Col);
+       MdB[ty][tx] = B3d(bz,ph*TILE_WIDTH+ty,Col);
     }
     else{
        MdB[ty][tx] = 0;
@@ -86,8 +86,31 @@ __global__ void matrixMultiplyShared(float *A, float *B, float *C,int numARows, 
   }
     
   if(Row < numCRows && Col < numCColumns){
-    C3d(tz,Row,Col) = pValue;
+    C3d(bz,Row,Col) = pValue;
   }
+}
+
+__global__ void matrixMultiply(float *A, float *B, float *C, int numARows,
+                               int numAColumns, int numBRows,
+                               int numBColumns, int numCRows,
+                               int numCColumns) {
+  //@@ Insert code to implement matrix multiplication here
+  int Row = blockIdx.y * blockDim.y + threadIdx.y;
+  int Col = blockIdx.x * blockDim.x + threadIdx.x;
+  int bz =  blockIdx.z;
+
+  #define A2d(i1, i0) A[i1 * numAColumns + i0]
+  #define B3d(i2, i1, i0) B[i2 * numBColumns * numBRows + i1 * numBColumns + i0]
+  #define C3d(i2, i1, i0) C[i2 * numCColumns * numCRows + i1 * numCRows + i0]
+
+  if(Row < numARows && Col < numBColumns){
+    float pValue = 0;
+    for(int k=0; k<numAColumns; k++){
+      pValue += A2d(Row,k)*B3d(bz,k,Col);
+    }
+    C3d(bz,Row,Col) = pValue;
+  }
+
 }
 
 /* 
@@ -105,6 +128,7 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
 
     // Extract the tensor dimensions into B,M,C,H,W,K
     // ...
+
     const int B = x.shape_[0];
     const int M = y.shape_[1];
     const int C = x.shape_[1];
@@ -156,19 +180,11 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
     printf("numCRows = %d\n", numCRows);
     printf("numCColumns = %d\n", numCColumns);
 
-    dim3 blockDim2(ceil(numBColumns*1.0/MATRIX_MULTIPLY_BLOCK_SIZE),ceil(numARows*1.0/MATRIX_MULTIPLY_BLOCK_SIZE),B);
-    dim3 gridDim2(MATRIX_MULTIPLY_BLOCK_SIZE,MATRIX_MULTIPLY_BLOCK_SIZE,1);
+    dim3 blockDim2(ceil(numBColumns*1.0/MATRIX_MULTIPLY_BLOCK_SIZE),ceil(numARows*1.0/MATRIX_MULTIPLY_BLOCK_SIZE),1);
+    dim3 gridDim2(MATRIX_MULTIPLY_BLOCK_SIZE,MATRIX_MULTIPLY_BLOCK_SIZE,B);
 
-    /*
-    void matrixMultiplyShared(float *A, float *B, float *C,
-                                     int numARows, int numAColumns,
-                                     int numBRows, int numBColumns,
-                                     int numCRows, int numCColumns)
-    */
-    matrixMultiplyShared<<<gridDim2,blockDim2>>>(w.dptr_, device_X_unroll, y.dptr_, numARows, numAColumns, numBRows, numBColumns, numCRows, numCColumns);
-    // Call the kernel
-    //forward_kernel<<<gridDim, blockDim, 0, s>>>(y.dptr_,x.dptr_,w.dptr_, B,M,C,H,W,K);
-    // Use MSHADOW_CUDA_CALL to check for CUDA runtime errors.
+    matrixMultiply<<<gridDim2,blockDim2>>>(w.dptr_, device_X_unroll, y.dptr_, numARows, numAColumns, numBRows, numBColumns, numCRows, numCColumns);
+
     cudaFree(device_X_unroll);
     MSHADOW_CUDA_CALL(cudaDeviceSynchronize());
 }
