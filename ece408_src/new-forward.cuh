@@ -36,19 +36,19 @@ __global__ void unroll_kernel(int C, int H, int W, int K, int B, const float *x,
     #define x4d(i3, i2, i1, i0) x[(i3) * (C * H * W) + (i2) * (H * W) + (i1) * (W) + i0]
     #define x_unroll3d(i2, i1, i0) x_unroll[(i2) * (H_unroll * W_unroll) + (i1) * W_unroll + i0]
 
-        if(tx < C * W_unroll){
-            channel = tx / W_unroll;
-            serial = tx % W_unroll;
-            h_out_index = serial / W_out;
-            w_out_index = serial % W_out;
-            w_unroll = h_out_index * W_out + w_out_index;
-            h_base = channel * K * K;
-            for(p = 0; p < K; p++)
-                for(q = 0; q < K; q++){
-                    h_unroll = h_base + p * K + q;
-                    x_unroll3d(b, h_unroll, w_unroll) = x4d(b, channel, h_out_index + p, w_out_index + q);
-                }
-        }
+    if(tx < C * W_unroll){
+        channel = tx / W_unroll;
+        serial = tx % W_unroll;
+        h_out_index = serial / W_out;
+        w_out_index = serial % W_out;
+        w_unroll = h_out_index * W_out + w_out_index;
+        h_base = channel * K * K;
+        for(p = 0; p < K; p++)
+            for(q = 0; q < K; q++){
+                h_unroll = h_base + p * K + q;
+                x_unroll3d(b, h_unroll, w_unroll) = x4d(b, channel, h_out_index + p, w_out_index + q);
+            }
+    }
   
 }
 
@@ -59,12 +59,11 @@ __global__ void matrixMultiply(float *A, float *B, float *C, int numARows,
   //@@ Insert code to implement matrix multiplication here
   int Row = blockIdx.y * blockDim.y + threadIdx.y;
   int Col = blockIdx.x * blockDim.x + threadIdx.x;
+  int b = blockIdx.z;
 
   #define A2d(i1, i0) A[i1 * numAColumns + i0]
   #define B3d(i2, i1, i0) B[i2 * numBColumns * numBRows + i1 * numBColumns + i0]
   #define C3d(i2, i1, i0) C[i2 * numCColumns * numCRows + i1 * numCColumns + i0]
-
-  for(int b = 0; b < Block; b++){
     if(Row < numARows && Col < numBColumns){
       float pValue = 0;
       for(int k=0; k<numAColumns; k++){
@@ -72,7 +71,6 @@ __global__ void matrixMultiply(float *A, float *B, float *C, int numARows,
       }
       C3d(b,Row,Col) = pValue;
     }
-  }
 
 }
 
@@ -179,7 +177,7 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
         numCColumns = numBColumns;
 
         dim3 blockDim2(ceil(numBColumns*1.0/MATRIX_MULTIPLY_BLOCK_SIZE),ceil(numARows*1.0/MATRIX_MULTIPLY_BLOCK_SIZE),1);
-        dim3 gridDim2(MATRIX_MULTIPLY_BLOCK_SIZE,MATRIX_MULTIPLY_BLOCK_SIZE,1);
+        dim3 gridDim2(MATRIX_MULTIPLY_BLOCK_SIZE,MATRIX_MULTIPLY_BLOCK_SIZE,B);
 
         matrixMultiply<<<gridDim2,blockDim2>>>(w.dptr_, device_X_unroll, y.dptr_, numARows, numAColumns, numBRows, numBColumns, numCRows, numCColumns, B);
         cudaFree(device_X_unroll);
