@@ -56,13 +56,62 @@ __global__ void forward_kernel(float *y, const float *x, const float *k, const i
         }
         __syncthreads();
 
-        for (int p = 0; p < K; p++){
-            for (int q = 0; q < K; q++){
-                if(h0+p<X_tile_width && w0+q < X_tile_width){
-                    acc += X_shared[(h0+p) * X_tile_width + w0+q] * W_shared[(p) * K + q]; 
-                }
-            }
-        }
+        acc += X_shared[(h0+0) * X_tile_width + w0+0] * W_shared[(0) * K + 0]; 
+        acc += X_shared[(h0+0) * X_tile_width + w0+1] * W_shared[(0) * K + 1]; 
+        acc += X_shared[(h0+0) * X_tile_width + w0+2] * W_shared[(0) * K + 2]; 
+        acc += X_shared[(h0+0) * X_tile_width + w0+3] * W_shared[(0) * K + 3]; 
+        acc += X_shared[(h0+0) * X_tile_width + w0+4] * W_shared[(0) * K + 4]; 
+        acc += X_shared[(h0+0) * X_tile_width + w0+5] * W_shared[(0) * K + 5]; 
+        acc += X_shared[(h0+0) * X_tile_width + w0+6] * W_shared[(0) * K + 6]; 
+
+        acc += X_shared[(h0+1) * X_tile_width + w0+0] * W_shared[(1) * K + 0]; 
+        acc += X_shared[(h0+1) * X_tile_width + w0+1] * W_shared[(1) * K + 1]; 
+        acc += X_shared[(h0+1) * X_tile_width + w0+2] * W_shared[(1) * K + 2]; 
+        acc += X_shared[(h0+1) * X_tile_width + w0+3] * W_shared[(1) * K + 3]; 
+        acc += X_shared[(h0+1) * X_tile_width + w0+4] * W_shared[(1) * K + 4]; 
+        acc += X_shared[(h0+1) * X_tile_width + w0+5] * W_shared[(1) * K + 5]; 
+        acc += X_shared[(h0+1) * X_tile_width + w0+6] * W_shared[(1) * K + 6];
+
+        acc += X_shared[(h0+2) * X_tile_width + w0+0] * W_shared[(2) * K + 0]; 
+        acc += X_shared[(h0+2) * X_tile_width + w0+1] * W_shared[(2) * K + 1]; 
+        acc += X_shared[(h0+2) * X_tile_width + w0+2] * W_shared[(2) * K + 2]; 
+        acc += X_shared[(h0+2) * X_tile_width + w0+3] * W_shared[(2) * K + 3]; 
+        acc += X_shared[(h0+2) * X_tile_width + w0+4] * W_shared[(2) * K + 4]; 
+        acc += X_shared[(h0+2) * X_tile_width + w0+5] * W_shared[(2) * K + 5]; 
+        acc += X_shared[(h0+2) * X_tile_width + w0+6] * W_shared[(2) * K + 6]; 
+
+        acc += X_shared[(h0+3) * X_tile_width + w0+0] * W_shared[(3) * K + 0]; 
+        acc += X_shared[(h0+3) * X_tile_width + w0+1] * W_shared[(3) * K + 1]; 
+        acc += X_shared[(h0+3) * X_tile_width + w0+2] * W_shared[(3) * K + 2]; 
+        acc += X_shared[(h0+3) * X_tile_width + w0+3] * W_shared[(3) * K + 3]; 
+        acc += X_shared[(h0+3) * X_tile_width + w0+4] * W_shared[(3) * K + 4]; 
+        acc += X_shared[(h0+3) * X_tile_width + w0+5] * W_shared[(3) * K + 5]; 
+        acc += X_shared[(h0+3) * X_tile_width + w0+6] * W_shared[(3) * K + 6]; 
+
+        acc += X_shared[(h0+4) * X_tile_width + w0+0] * W_shared[(4) * K + 0]; 
+        acc += X_shared[(h0+4) * X_tile_width + w0+1] * W_shared[(4) * K + 1]; 
+        acc += X_shared[(h0+4) * X_tile_width + w0+2] * W_shared[(4) * K + 2]; 
+        acc += X_shared[(h0+4) * X_tile_width + w0+3] * W_shared[(4) * K + 3]; 
+        acc += X_shared[(h0+4) * X_tile_width + w0+4] * W_shared[(4) * K + 4]; 
+        acc += X_shared[(h0+4) * X_tile_width + w0+5] * W_shared[(4) * K + 5]; 
+        acc += X_shared[(h0+4) * X_tile_width + w0+6] * W_shared[(4) * K + 6]; 
+
+        acc += X_shared[(h0+5) * X_tile_width + w0+0] * W_shared[(5) * K + 0]; 
+        acc += X_shared[(h0+5) * X_tile_width + w0+1] * W_shared[(5) * K + 1]; 
+        acc += X_shared[(h0+5) * X_tile_width + w0+2] * W_shared[(5) * K + 2]; 
+        acc += X_shared[(h0+5) * X_tile_width + w0+3] * W_shared[(5) * K + 3]; 
+        acc += X_shared[(h0+5) * X_tile_width + w0+4] * W_shared[(5) * K + 4]; 
+        acc += X_shared[(h0+5) * X_tile_width + w0+5] * W_shared[(5) * K + 5]; 
+        acc += X_shared[(h0+5) * X_tile_width + w0+6] * W_shared[(5) * K + 6]; 
+
+        acc += X_shared[(h0+6) * X_tile_width + w0+0] * W_shared[(6) * K + 0]; 
+        acc += X_shared[(h0+6) * X_tile_width + w0+1] * W_shared[(6) * K + 1]; 
+        acc += X_shared[(h0+6) * X_tile_width + w0+2] * W_shared[(6) * K + 2]; 
+        acc += X_shared[(h0+6) * X_tile_width + w0+3] * W_shared[(6) * K + 3]; 
+        acc += X_shared[(h0+6) * X_tile_width + w0+4] * W_shared[(6) * K + 4]; 
+        acc += X_shared[(h0+6) * X_tile_width + w0+5] * W_shared[(6) * K + 5]; 
+        acc += X_shared[(h0+6) * X_tile_width + w0+6] * W_shared[(6) * K + 6]; 
+
         __syncthreads();
     }
 
