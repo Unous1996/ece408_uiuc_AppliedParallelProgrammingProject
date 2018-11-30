@@ -12,7 +12,7 @@ namespace mxnet
 namespace op
 {
 
-__global__ void unroll_kernel(int C, int H, int W, int K, float *x, float *x_unroll){
+__global__ void unroll_kernel(int C, int H, int W, int K, const float *x, float *x_unroll){
     
     int channel, serial;
     
@@ -21,7 +21,7 @@ __global__ void unroll_kernel(int C, int H, int W, int K, float *x, float *x_unr
     int p,q;
     
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
-    int b = threadIdx.y;
+    int b = blockIdx.y;
 
     int H_out = H - K + 1;
     int W_out = W - K + 1;
@@ -49,7 +49,7 @@ __global__ void unroll_kernel(int C, int H, int W, int K, float *x, float *x_unr
     }
 }
 
-__global__ void matrixMultiplyShared(float *A, float *B, float *C,int numARows, int numAColumns,int numBRows, int numBColumns, int numCRows, int numCColumns){
+__global__ void matrixMultiplyShared(const float *A, const float *B, float *C,int numARows, int numAColumns,int numBRows, int numBColumns, int numCRows, int numCColumns){
   //@@ Insert code to implement matrix multiplication here
   //@@ You have to use shared memory for this MP
   __shared__ float MdA[32][32];
@@ -139,27 +139,14 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
     const int H_out = H - K + 1;
     const int W_out = W - K + 1;
 
-    printf("Expected:\n");
-    printf("B = %d\n", B);
-    printf("M = %d\n", M);
-    printf("C = %d\n", C);
-    printf("H = %d\n", H);
-    printf("W = %d\n", W);
-    printf("K = %d\n", K);
-    printf("H_out = %d\n", H_out);
-    printf("W_out = %d\n", W_out);
-    
     int W_unroll = H_out * W_out;
     int H_unroll = K * K * C;
-
     int num_threads = C * H_out * W_out;
 
     float* device_X_unroll;
-
     cudaMalloc((void**)&device_X_unroll, B * W_unroll * H_unroll * sizeof(float));
-
-    dim3 blockDim1(UNROLL_BLOCK_SIZE,B,1);
-    dim3 gridDim1(ceil(num_threads * 1.0/(UNROLL_BLOCK_SIZE)),1,1);    
+    dim3 blockDim1(UNROLL_BLOCK_SIZE,1,1);
+    dim3 gridDim1(ceil(num_threads * 1.0/(UNROLL_BLOCK_SIZE)),B,1);    
     
     unroll_kernel<<<gridDim1, blockDim1>>>(C, H, W, K, x.dptr_, device_X_unroll);
     int numARows, numAColumns, numBRows, numBColumns, numCRows, numCColumns;
@@ -170,15 +157,6 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
     numARows = M;
     numCRows = numARows;
     numCColumns = numBColumns;
-
-    printf("numARows = %d\n", numARows);
-    printf("numAColumns = %d\n", numAColumns);
-
-    printf("numBRows = %d\n", numBRows);
-    printf("numBColumns = %d\n", numBColumns);
-
-    printf("numCRows = %d\n", numCRows);
-    printf("numCColumns = %d\n", numCColumns);
 
     dim3 blockDim2(ceil(numBColumns*1.0/MATRIX_MULTIPLY_BLOCK_SIZE),ceil(numARows*1.0/MATRIX_MULTIPLY_BLOCK_SIZE),1);
     dim3 gridDim2(MATRIX_MULTIPLY_BLOCK_SIZE,MATRIX_MULTIPLY_BLOCK_SIZE,B);
