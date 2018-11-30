@@ -20,8 +20,8 @@ commands:
     #- nvprof python m1.2.py
     #- /usr/bin/time python m2.1.py 10000 # execute code
     - /usr/bin/time python m3.1.py 100 # execute code
-    #- /usr/bin/time python m3.1.py 1000 # execute code
-    #- /usr/bin/time python m3.1.py 10000 # execute code
+    - /usr/bin/time python m3.1.py 1000 # execute code
+    - /usr/bin/time python m3.1.py 10000 # execute code
     # /usr/bin/time python m3.1.py # execute code
     #- /usr/bin/time python m4.1.py # execute code
     #- nvprf -f -o timeline.nvvp python m1.2.py # execute code
