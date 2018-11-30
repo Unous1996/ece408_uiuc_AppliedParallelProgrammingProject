@@ -12,7 +12,7 @@ namespace mxnet
 namespace op
 {
 
-__global__ void unroll_kernel(int C, int H, int W, int K, const float *x, float *x_unroll){
+__global__ void unroll_kernel(int C, int H, int W, int K, int B, const float *x, float *x_unroll){
     
     int channel, serial;
     
@@ -21,7 +21,6 @@ __global__ void unroll_kernel(int C, int H, int W, int K, const float *x, float 
     int p,q;
     
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
-    int b = blockIdx.y;
 
     int H_out = H - K + 1;
     int W_out = W - K + 1;
@@ -34,81 +33,43 @@ __global__ void unroll_kernel(int C, int H, int W, int K, const float *x, float 
     #define x4d(i3, i2, i1, i0) x[(i3) * (C * H * W) + (i2) * (H * W) + (i1) * (W) + i0]
     #define x_unroll3d(i2, i1, i0) x_unroll[(i2) * (H_unroll * W_unroll) + (i1) * W_unroll + i0]
 
-    if(tx < C * W_unroll){
-        channel = tx / W_unroll;
-        serial = tx % W_unroll;
-        h_out_index = serial / W_out;
-        w_out_index = serial % W_out;
-        w_unroll = h_out_index * W_out + w_out_index;
-        h_base = channel * K * K;
-        for(p = 0; p < K; p++)
-            for(q = 0; q < K; q++){
-                h_unroll = h_base + p * K + q;
-                x_unroll3d(b, h_unroll, w_unroll) = x4d(b, channel, h_out_index + p, w_out_index + q);
-            }
+    for(int b = 0; b < B; b++){
+        if(tx < C * W_unroll){
+            channel = tx / W_unroll;
+            serial = tx % W_unroll;
+            h_out_index = serial / W_out;
+            w_out_index = serial % W_out;
+            w_unroll = h_out_index * W_out + w_out_index;
+            h_base = channel * K * K;
+            for(p = 0; p < K; p++)
+                for(q = 0; q < K; q++){
+                    h_unroll = h_base + p * K + q;
+                    x_unroll3d(b, h_unroll, w_unroll) = x4d(b, channel, h_out_index + p, w_out_index + q);
+                }
+        }
     }
-}
-
-__global__ void matrixMultiplyShared(const float *A, const float *B, float *C,int numARows, int numAColumns,int numBRows, int numBColumns, int numCRows, int numCColumns){
-  //@@ Insert code to implement matrix multiplication here
-  //@@ You have to use shared memory for this MP
-  __shared__ float MdA[32][32];
-  __shared__ float MdB[32][32];
-  int bx = blockIdx.x, by = blockIdx.y, tx = threadIdx.x, ty = threadIdx.y, bz = blockIdx.z;
-  int Row = by * TILE_WIDTH + ty;
-  int Col = bx * TILE_WIDTH + tx;
-
-  #define A2d(i1, i0) A[i1 * numAColumns + i0]
-  #define B3d(i2, i1, i0) B[i2 * numBColumns * numBRows + i1 * numBColumns + i0]
-  #define C3d(i2, i1, i0) C[i2 * numCColumns * numCRows + i1 * numCRows + i0]
-  
-  float pValue = 0;
-  for(int ph=0; ph < ceil(numAColumns*1.0/TILE_WIDTH); ph++){
-      //Collaborate Loading SubPhase
-    if(Row < numARows){
-       MdA[ty][tx] = A2d(Row,ph*TILE_WIDTH + tx);
-    }
-    else{
-      MdA[ty][tx] = 0;
-    }
-    
-    if(ph*TILE_WIDTH+ty < numBRows && Col < numBColumns){
-       MdB[ty][tx] = B3d(bz,ph*TILE_WIDTH+ty,Col);
-    }
-    else{
-       MdB[ty][tx] = 0;
-    }
-    __syncthreads();
-    for(int k=0; k<TILE_WIDTH; k++){
-      pValue += MdA[ty][k] * MdB[k][tx];
-    }
-    __syncthreads();
-  }
-    
-  if(Row < numCRows && Col < numCColumns){
-    C3d(bz,Row,Col) = pValue;
-  }
 }
 
 __global__ void matrixMultiply(float *A, float *B, float *C, int numARows,
                                int numAColumns, int numBRows,
                                int numBColumns, int numCRows,
-                               int numCColumns) {
+                               int numCColumns, int Block) {
   //@@ Insert code to implement matrix multiplication here
   int Row = blockIdx.y * blockDim.y + threadIdx.y;
   int Col = blockIdx.x * blockDim.x + threadIdx.x;
-  int bz =  blockIdx.z;
 
   #define A2d(i1, i0) A[i1 * numAColumns + i0]
   #define B3d(i2, i1, i0) B[i2 * numBColumns * numBRows + i1 * numBColumns + i0]
-  #define C3d(i2, i1, i0) C[i2 * numCColumns * numCRows + i1 * numCRows + i0]
+  #define C3d(i2, i1, i0) C[i2 * numCColumns * numCRows + i1 * numCColumns + i0]
 
-  if(Row < numARows && Col < numBColumns){
-    float pValue = 0;
-    for(int k=0; k<numAColumns; k++){
-      pValue += A2d(Row,k)*B3d(bz,k,Col);
+  for(int b = 0; b < Block; b++){
+    if(Row < numARows && Col < numBColumns){
+      float pValue = 0;
+      for(int k=0; k<numAColumns; k++){
+        pValue += A2d(Row,k)*B3d(b,k,Col);
+      }
+      C3d(b,Row,Col) = pValue;
     }
-    C3d(bz,Row,Col) = pValue;
   }
 
 }
@@ -146,9 +107,9 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
     float* device_X_unroll;
     cudaMalloc((void**)&device_X_unroll, B * W_unroll * H_unroll * sizeof(float));
     dim3 blockDim1(UNROLL_BLOCK_SIZE,1,1);
-    dim3 gridDim1(ceil(num_threads * 1.0/(UNROLL_BLOCK_SIZE)),B,1);    
+    dim3 gridDim1(ceil(num_threads * 1.0/(UNROLL_BLOCK_SIZE)),1,1);    
     
-    unroll_kernel<<<gridDim1, blockDim1>>>(C, H, W, K, x.dptr_, device_X_unroll);
+    unroll_kernel<<<gridDim1, blockDim1>>>(C, H, W, K, B, x.dptr_, device_X_unroll);
     int numARows, numAColumns, numBRows, numBColumns, numCRows, numCColumns;
 
     numBRows = H_unroll;
@@ -159,9 +120,9 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
     numCColumns = numBColumns;
 
     dim3 blockDim2(ceil(numBColumns*1.0/MATRIX_MULTIPLY_BLOCK_SIZE),ceil(numARows*1.0/MATRIX_MULTIPLY_BLOCK_SIZE),1);
-    dim3 gridDim2(MATRIX_MULTIPLY_BLOCK_SIZE,MATRIX_MULTIPLY_BLOCK_SIZE,B);
+    dim3 gridDim2(MATRIX_MULTIPLY_BLOCK_SIZE,MATRIX_MULTIPLY_BLOCK_SIZE,1);
 
-    matrixMultiply<<<gridDim2,blockDim2>>>(w.dptr_, device_X_unroll, y.dptr_, numARows, numAColumns, numBRows, numBColumns, numCRows, numCColumns);
+    matrixMultiply<<<gridDim2,blockDim2>>>(w.dptr_, device_X_unroll, y.dptr_, numARows, numAColumns, numBRows, numBColumns, numCRows, numCColumns, B);
 
     cudaFree(device_X_unroll);
     MSHADOW_CUDA_CALL(cudaDeviceSynchronize());
