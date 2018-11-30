@@ -39,11 +39,70 @@ __global__ void forward_kernel(float *y, const float *x, const float *k, const i
 
     float acc = 0;
     for (int c = 0; c < C; c++) {
+        /*
         for (int p = 0; p < K; p++) {
             for (int q = 0; q < K; q++) {
                     acc += x4d(b, c, h + p, w + q) * k4d(m, c, p, q);
             }
         }
+        */
+       
+        acc += x4d(b, c, h + 0, w + 0) * k4d(m, c, 0, 0);
+        acc += x4d(b, c, h + 0, w + 1) * k4d(m, c, 0, 1);
+        acc += x4d(b, c, h + 0, w + 2) * k4d(m, c, 0, 2);
+        acc += x4d(b, c, h + 0, w + 3) * k4d(m, c, 0, 3);
+        acc += x4d(b, c, h + 0, w + 4) * k4d(m, c, 0, 4);
+        acc += x4d(b, c, h + 0, w + 5) * k4d(m, c, 0, 5);
+        acc += x4d(b, c, h + 0, w + 6) * k4d(m, c, 0, 6);
+
+        acc += x4d(b, c, h + 1, w + 0) * k4d(m, c, 1, 0);
+        acc += x4d(b, c, h + 1, w + 1) * k4d(m, c, 1, 1);
+        acc += x4d(b, c, h + 1, w + 2) * k4d(m, c, 1, 2);
+        acc += x4d(b, c, h + 1, w + 3) * k4d(m, c, 1, 3);
+        acc += x4d(b, c, h + 1, w + 4) * k4d(m, c, 1, 4);
+        acc += x4d(b, c, h + 1, w + 5) * k4d(m, c, 1, 5);
+        acc += x4d(b, c, h + 1, w + 6) * k4d(m, c, 1, 6);
+
+        acc += x4d(b, c, h + 2, w + 0) * k4d(m, c, 2, 0);
+        acc += x4d(b, c, h + 2, w + 1) * k4d(m, c, 2, 1);
+        acc += x4d(b, c, h + 2, w + 2) * k4d(m, c, 2, 2);
+        acc += x4d(b, c, h + 2, w + 3) * k4d(m, c, 2, 3);
+        acc += x4d(b, c, h + 2, w + 4) * k4d(m, c, 2, 4);
+        acc += x4d(b, c, h + 2, w + 5) * k4d(m, c, 2, 5);
+        acc += x4d(b, c, h + 2, w + 6) * k4d(m, c, 2, 6);
+
+        acc += x4d(b, c, h + 3, w + 0) * k4d(m, c, 3, 0);
+        acc += x4d(b, c, h + 3, w + 1) * k4d(m, c, 3, 1);
+        acc += x4d(b, c, h + 3, w + 2) * k4d(m, c, 3, 2);
+        acc += x4d(b, c, h + 3, w + 3) * k4d(m, c, 3, 3);
+        acc += x4d(b, c, h + 3, w + 4) * k4d(m, c, 3, 4);
+        acc += x4d(b, c, h + 3, w + 5) * k4d(m, c, 3, 5);
+        acc += x4d(b, c, h + 3, w + 6) * k4d(m, c, 3, 6);
+
+        acc += x4d(b, c, h + 4, w + 0) * k4d(m, c, 4, 0);
+        acc += x4d(b, c, h + 4, w + 1) * k4d(m, c, 4, 1);
+        acc += x4d(b, c, h + 4, w + 2) * k4d(m, c, 4, 2);
+        acc += x4d(b, c, h + 4, w + 3) * k4d(m, c, 4, 3);
+        acc += x4d(b, c, h + 4, w + 4) * k4d(m, c, 4, 4);
+        acc += x4d(b, c, h + 4, w + 5) * k4d(m, c, 4, 5);
+        acc += x4d(b, c, h + 4, w + 6) * k4d(m, c, 4, 6);
+
+        acc += x4d(b, c, h + 5, w + 0) * k4d(m, c, 5, 0);
+        acc += x4d(b, c, h + 5, w + 1) * k4d(m, c, 5, 1);
+        acc += x4d(b, c, h + 5, w + 2) * k4d(m, c, 5, 2);
+        acc += x4d(b, c, h + 5, w + 3) * k4d(m, c, 5, 3);
+        acc += x4d(b, c, h + 5, w + 4) * k4d(m, c, 5, 4);
+        acc += x4d(b, c, h + 5, w + 5) * k4d(m, c, 5, 5);
+        acc += x4d(b, c, h + 5, w + 6) * k4d(m, c, 5, 6);
+
+        acc += x4d(b, c, h + 6, w + 0) * k4d(m, c, 6, 0);
+        acc += x4d(b, c, h + 6, w + 1) * k4d(m, c, 6, 1);
+        acc += x4d(b, c, h + 6, w + 2) * k4d(m, c, 6, 2);
+        acc += x4d(b, c, h + 6, w + 3) * k4d(m, c, 6, 3);
+        acc += x4d(b, c, h + 6, w + 4) * k4d(m, c, 6, 4);
+        acc += x4d(b, c, h + 6, w + 5) * k4d(m, c, 6, 5);
+        acc += x4d(b, c, h + 6, w + 6) * k4d(m, c, 6, 6);
+
     }
     if (h < H_out && w < W_out) {
         y4d(b, m, h, w) = acc;
@@ -85,7 +144,7 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
     int W_grid = ceil(W_out / (TILE_WIDTH * 1.0));
     int H_grid = ceil(H_out / (TILE_WIDTH * 1.0));
     int Total_grid = W_grid * H_grid;
-
+    printf("K = %d\n", K);
     // Set the kernel dimensions
     // dim3 gridDim(0);
     // dim3 blockDim(0);
