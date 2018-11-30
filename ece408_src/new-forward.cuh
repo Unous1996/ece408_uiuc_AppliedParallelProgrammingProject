@@ -49,7 +49,32 @@ __global__ void unroll_kernel(int C, int H, int W, int K, int B, const float *x,
                 x_unroll3d(b, h_unroll, w_unroll) = x4d(b, channel, h_out_index + p, w_out_index + q);
             }
     }
+}
+
+__global__ void unroll_kernel_new(int C, int H, int W, int K, int B, const float *x, float *x_unroll){
   
+    int tx = blockIdx.x * blockDim.x + threadIdx.x;
+    int ty = blockIdx.y * blockDim.y + threadIdx.y;
+
+    int position_in_batch = blockIdx.z;
+
+    int H_out = H - K + 1;
+    int W_out = W - K + 1;
+
+    int W_unroll = H_out * W_out;
+    int H_unroll = K * K * C;
+
+    int channel = tx / (K*K);
+    int serial = tx % (K*K);
+    int kernel_index_row = ty / W_out;
+    int kernel_index_column = ty % W_out;
+    int kernel_offset_row = serial / K;
+    int kernel_offset_column = serial % K;
+
+    #define x4d(i3, i2, i1, i0) x[(i3) * (C * H * W) + (i2) * (H * W) + (i1) * (W) + i0]
+    #define x_unroll3d(i2, i1, i0) x_unroll[(i2) * (H_unroll * W_unroll) + (i1) * W_unroll + i0]
+
+    x_unroll3d(position_in_batch, tx, ty) = x4d(position_in_batch, channel, kernel_index_row + kernel_offset_row, kernel_index_column + kernel_offset_column);
 }
 
 __global__ void matrixMultiply(float *A, float *B, float *C, int numARows,
