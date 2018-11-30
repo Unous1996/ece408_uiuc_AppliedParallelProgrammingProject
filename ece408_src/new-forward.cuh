@@ -46,7 +46,6 @@ __global__ void forward_kernel(float *y, const float *x, const float *k, const i
             }
         }
         */
-       
         acc += x4d(b, c, h + 0, w + 0) * k4d(m, c, 0, 0);
         acc += x4d(b, c, h + 0, w + 1) * k4d(m, c, 0, 1);
         acc += x4d(b, c, h + 0, w + 2) * k4d(m, c, 0, 2);
@@ -102,9 +101,9 @@ __global__ void forward_kernel(float *y, const float *x, const float *k, const i
         acc += x4d(b, c, h + 6, w + 4) * k4d(m, c, 6, 4);
         acc += x4d(b, c, h + 6, w + 5) * k4d(m, c, 6, 5);
         acc += x4d(b, c, h + 6, w + 6) * k4d(m, c, 6, 6);
-
     }
-    if (h < H_out && w < W_out) {
+
+    if (h < H_out && w < W_out){
         y4d(b, m, h, w) = acc;
     }   
     //(void)H_out; // silence declared but never referenced warning. remove this line when you start working
@@ -144,7 +143,6 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
     int W_grid = ceil(W_out / (TILE_WIDTH * 1.0));
     int H_grid = ceil(H_out / (TILE_WIDTH * 1.0));
     int Total_grid = W_grid * H_grid;
-    printf("K = %d\n", K);
     // Set the kernel dimensions
     // dim3 gridDim(0);
     // dim3 blockDim(0);
