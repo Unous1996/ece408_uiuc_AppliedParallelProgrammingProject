@@ -2,7 +2,8 @@
 #define MXNET_OPERATOR_NEW_FORWARD_CUH_
 
 #define TILE_WIDTH 16
-#define UNROLL_BLOCK_SIZE 512
+#define UNROLL_BLOCK_SIZE_X 32
+#define UNROLL_BLOCK_SIZE_Y 32
 #define MATRIX_MULTIPLY_BLOCK_SIZE 16
 #define MAX_BATCH_ALLOWED 1000
 
@@ -89,6 +90,7 @@ __global__ void matrixMultiply(float *A, float *B, float *C, int numARows,
   #define A2d(i1, i0) A[i1 * numAColumns + i0]
   #define B3d(i2, i1, i0) B[i2 * numBColumns * numBRows + i1 * numBColumns + i0]
   #define C3d(i2, i1, i0) C[i2 * numCColumns * numCRows + i1 * numCColumns + i0]
+
     if(Row < numARows && Col < numBColumns){
       float pValue = 0;
       for(int k=0; k<numAColumns; k++){
@@ -181,17 +183,19 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
 
     int W_unroll = H_out * W_out;
     int H_unroll = K * K * C;
-    int num_threads = C * H_out * W_out;
+    int num_threads = H_unroll * W_unroll;
 
     const int number_of_batch_iterations = B / MAX_BATCH_ALLOWED;
 
     float* device_X_unroll;
     if(B <= MAX_BATCH_ALLOWED){
         cudaMalloc((void**)&device_X_unroll, B * W_unroll * H_unroll * sizeof(float));
-        dim3 blockDim1(UNROLL_BLOCK_SIZE,1,1);
-        dim3 gridDim1(ceil(num_threads * 1.0/(UNROLL_BLOCK_SIZE)),B,1);    
+        /*
+        dim3 blockDim1(UNROLL_BLOCK_SIZE_X,UNROLL_BLOCK_SIZE_Y,1);
+        dim3 gridDim1(ceil(num_threads * 1.0/(UNROLL_BLOCK_SIZE_X)),ceil(num_threads * 1.0/(UNROLL_BLOCK_SIZE_Y)),B);    
         
-        unroll_kernel<<<gridDim1, blockDim1>>>(C, H, W, K, B, x.dptr_, device_X_unroll);
+        unroll_kernel_new<<<gridDim1, blockDim1>>>(C, H, W, K, B, x.dptr_, device_X_unroll);
+        */
         int numARows, numAColumns, numBRows, numBColumns, numCRows, numCColumns;
 
         numBRows = H_unroll;
