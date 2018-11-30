@@ -32,7 +32,7 @@ __global__ void unroll_kernel(int C, int H, int W, int K, float *x, float *x_unr
     int h_out_index, w_out_index;
 
     #define x4d(i3, i2, i1, i0) x[(i3) * (C * H * W) + (i2) * (H * W) + (i1) * (W) + i0]
-    #define x_unroll3d(i2, i1, i0) x[(i2) * (H_unroll * W_unroll) + (i1) * W_unroll + i0]
+    #define x_unroll3d(i2, i1, i0) x_unroll[(i2) * (H_unroll * W_unroll) + (i1) * W_unroll + i0]
 
     if(tx < C * W_unroll){
         channel = tx / W_unroll;
