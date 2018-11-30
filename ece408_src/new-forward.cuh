@@ -44,7 +44,6 @@ __global__ void forward_kernel(float *y, const float *x, const float *k, const i
         if(h0 < K && w0 < K){
             W_shared[h0 * K + w0] = k4d(m, c, h0, w0);
         }   
-        __syncthreads();
 
         for(int i=h; i < h_base + X_tile_width; i+= TILE_WIDTH){
             for(int j=w; j < w_base + X_tile_width; j+= TILE_WIDTH)
