@@ -23,6 +23,8 @@ __global__ void unroll_kernel(int C, int H, int W, int K, int B, const float *x,
     
     int tx = blockIdx.x * blockDim.x + threadIdx.x;
 
+    int b = blockIdx.y;
+
     int H_out = H - K + 1;
     int W_out = W - K + 1;
 
@@ -34,7 +36,6 @@ __global__ void unroll_kernel(int C, int H, int W, int K, int B, const float *x,
     #define x4d(i3, i2, i1, i0) x[(i3) * (C * H * W) + (i2) * (H * W) + (i1) * (W) + i0]
     #define x_unroll3d(i2, i1, i0) x_unroll[(i2) * (H_unroll * W_unroll) + (i1) * W_unroll + i0]
 
-    for(int b = 0; b < B; b++){
         if(tx < C * W_unroll){
             channel = tx / W_unroll;
             serial = tx % W_unroll;
@@ -48,13 +49,13 @@ __global__ void unroll_kernel(int C, int H, int W, int K, int B, const float *x,
                     x_unroll3d(b, h_unroll, w_unroll) = x4d(b, channel, h_out_index + p, w_out_index + q);
                 }
         }
-    }
+  
 }
 
 __global__ void matrixMultiply(float *A, float *B, float *C, int numARows,
                                int numAColumns, int numBRows,
                                int numBColumns, int numCRows,
-                               int numCColumns, int Block) {
+                               int numCColumns, int Block){
   //@@ Insert code to implement matrix multiplication here
   int Row = blockIdx.y * blockDim.y + threadIdx.y;
   int Col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -145,14 +146,6 @@ __global__ void matrixMultiply_indirect(float *A, float *B, float *C, int numARo
 template <>
 void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tensor<gpu, 4, float> &x, const mshadow::Tensor<gpu, 4, float> &w)
 {
-
-    // Use mxnet's CHECK_EQ to do assertions.
-    // Remove this assertion when you do your implementation!
-    //CHECK_EQ(0, 1) << "Remove this line and replace with your implementation";
-
-    // Extract the tensor dimensions into B,M,C,H,W,K
-    // ...
-
     const int B = x.shape_[0];
     const int M = y.shape_[1];
     const int C = x.shape_[1];
@@ -173,7 +166,7 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
     if(B <= MAX_BATCH_ALLOWED){
         cudaMalloc((void**)&device_X_unroll, B * W_unroll * H_unroll * sizeof(float));
         dim3 blockDim1(UNROLL_BLOCK_SIZE,1,1);
-        dim3 gridDim1(ceil(num_threads * 1.0/(UNROLL_BLOCK_SIZE)),1,1);    
+        dim3 gridDim1(ceil(num_threads * 1.0/(UNROLL_BLOCK_SIZE)),B,1);    
         
         unroll_kernel<<<gridDim1, blockDim1>>>(C, H, W, K, B, x.dptr_, device_X_unroll);
         int numARows, numAColumns, numBRows, numBColumns, numCRows, numCColumns;
@@ -189,6 +182,7 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
         dim3 gridDim2(MATRIX_MULTIPLY_BLOCK_SIZE,MATRIX_MULTIPLY_BLOCK_SIZE,1);
 
         matrixMultiply<<<gridDim2,blockDim2>>>(w.dptr_, device_X_unroll, y.dptr_, numARows, numAColumns, numBRows, numBColumns, numCRows, numCColumns, B);
+        cudaFree(device_X_unroll);
     }
     else{
         for(int b_it = 0; b_it < number_of_batch_iterations; b_it++){
