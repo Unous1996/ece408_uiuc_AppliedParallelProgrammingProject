@@ -63,6 +63,7 @@ __global__ void forward_kernel(float *y, const float *x, const float *k, const i
                 T[tz + 4] = 0.0;
             }
 
+            /*
             if(b == 0 && c == 0 && h == 0 && w == 0 && p == 0){
                 printf("Load check");
                 for(int i_t = 0; i_t < 7; i_t++){
@@ -70,6 +71,7 @@ __global__ void forward_kernel(float *y, const float *x, const float *k, const i
                     printf("Where the value should be loaded is %f \n", x4d(b, c, h + p, w + i_t) * k4d(m, c, p, i_t));
                 }
             }
+            */
 
             while(stride < 8){
                 __syncthreads();
@@ -80,13 +82,15 @@ __global__ void forward_kernel(float *y, const float *x, const float *k, const i
                 stride = stride * 2;
             }
 
-            printf("Result check");
+            //printf("Result check");
             for(int q = 0; q < K; q++){
                 temp += x4d(b, c, h + p, w + q) * k4d(m, c, p, q);
+                /*
                 if(b == 0 && c == 0 && h == 0 && w == 0 && p == 0){
                     printf("T[%d] = %f \n" , q, T[q]);
                     printf("Correct[%d] = %f\n", q, temp);
                 }
+                */
             }
 
             acc += T[7];
@@ -96,7 +100,7 @@ __global__ void forward_kernel(float *y, const float *x, const float *k, const i
     if (h < H_out && w < W_out) {
         y4d(b, m, h, w) = acc;
     }   
-    
+
     //(void)H_out; // silence declared but never referenced warning. remove this line when you start working
     //(void)W_out; // silence declared but never referenced warning. remove this line when you start working
 
