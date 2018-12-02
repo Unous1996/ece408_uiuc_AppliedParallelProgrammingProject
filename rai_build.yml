@@ -19,14 +19,14 @@ commands:
     #- /usr/bin/time python m1.2.py # execute code
     #- nvprof python m1.2.py
     #- /usr/bin/time python m2.1.py 10000 # execute code
-    - /usr/bin/time python m3.1.py 100 # execute code
-    - /usr/bin/time python m3.1.py 1000 # execute code
-    - /usr/bin/time python m3.1.py 10000 # execute code
+    - /usr/bin/time python m4.1.py 100 # execute code
+    - /usr/bin/time python m4.1.py 1000 # execute code
+    - /usr/bin/time python m4.1.py 10000 # execute code
     # /usr/bin/time python m3.1.py # execute code
     #- /usr/bin/time python m4.1.py # execute code
     #- nvprf -f -o timeline.nvvp python m1.2.py # execute code
     #- nvprof -o timeline.nvprof python m3.1.py 100 # execute code
     #- nvprof -f --analysis-metrics -o analysis.nvvp python m3.1.py 100 # execute code
-    - nvprof --kernels "::forward:1" --analysis-metrics -o forward1_analysis.nvprof python m3.1.py 100
-    #- nvprof --kernels "::forward:2" --analysis-metrics -o forward2_analysis.nvprof python m3.1.py 1000
-    #- nvprof --kernels "::forward:3" --analysis-metrics -o forward3_analysis.nvprof python m3.1.py 10000
+    - nvprof --kernels "::forward:1" --analysis-metrics -o forward1_analysis.nvprof python m4.1.py 100
+    - nvprof --kernels "::forward:2" --analysis-metrics -o forward2_analysis.nvprof python m4.1.py 1000
+    - nvprof --kernels "::forward:3" --analysis-metrics -o forward3_analysis.nvprof python m4.1.py 10000
