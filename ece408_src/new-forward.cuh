@@ -1,7 +1,8 @@
 #ifndef MXNET_OPERATOR_NEW_FORWARD_CUH_
 #define MXNET_OPERATOR_NEW_FORWARD_CUH_
 
-#define TILE_WIDTH 16
+#define TILE_WIDTH_32 32
+#define TILE_WIDTH_16 16
 
 #include <mxnet/base.h>
 
@@ -10,18 +11,18 @@ namespace mxnet
 namespace op
 {
 
-__global__ void matrixMultiplyShared(float *k, float *x, float *y,
+__global__ void matrixMultiplyShared32(float *k, float *x, float *y,
                                      const int B, const int M, const int C, const int H, const int W, const int K){
 
-  __shared__ float MdA[TILE_WIDTH][TILE_WIDTH];
-  __shared__ float MdB[TILE_WIDTH][TILE_WIDTH];
+  __shared__ float MdA[TILE_WIDTH_32][TILE_WIDTH_32];
+  __shared__ float MdB[TILE_WIDTH_32][TILE_WIDTH_32];
 
   const int H_out = H - K + 1;
   const int W_out = W - K + 1;
 
   int bx = blockIdx.x, by = blockIdx.y, tx = threadIdx.x, ty = threadIdx.y, bz = blockIdx.z;
-  int row = by * TILE_WIDTH + ty;
-  int col = bx * TILE_WIDTH + tx;
+  int row = by * TILE_WIDTH_32 + ty;
+  int col = bx * TILE_WIDTH_32 + tx;
 
   int numAColumns = C*K*K;
   int numCRows = M;
@@ -33,10 +34,10 @@ __global__ void matrixMultiplyShared(float *k, float *x, float *y,
 
   float pValue = 0.0;
 
-  for(int ph=0; ph < ceil(numAColumns*1.0/TILE_WIDTH); ph++){
+  for(int ph=0; ph < ceil(numAColumns*1.0/TILE_WIDTH_32); ph++){
     
-    int temp_x = ph * TILE_WIDTH + tx;
-    int temp_y = ph * TILE_WIDTH + ty;
+    int temp_x = ph * TILE_WIDTH_32 + tx;
+    int temp_y = ph * TILE_WIDTH_32 + ty;
 
     int k_c = temp_x / (K*K);
     int k_h = temp_x % (K*K) / K;
@@ -65,7 +66,7 @@ __global__ void matrixMultiplyShared(float *k, float *x, float *y,
     }
     __syncthreads();
 
-    for(int k=0; k<TILE_WIDTH; k++){
+    for(int k=0; k<TILE_WIDTH_32; k++){
         pValue += MdA[ty][k] * MdB[k][tx];
     }
     __syncthreads();
@@ -74,8 +75,85 @@ __global__ void matrixMultiplyShared(float *k, float *x, float *y,
   if(row < numCRows && col < numCColumns){
     int y_b = bz;
     int y_m = row;
-    int y_h = (bx*TILE_WIDTH + tx) / W_out;
-    int y_w = (bx*TILE_WIDTH + tx) % W_out;
+    int y_h = (bx*TILE_WIDTH_32 + tx) / W_out;
+    int y_w = (bx*TILE_WIDTH_32 + tx) % W_out;
+    
+    if(y_b < B && y_m < M){
+      y4d(y_b, y_m, y_h, y_w) = pValue;
+    }
+  }
+
+  #undef y4d
+  #undef x4d
+  #undef k4d
+}
+
+__global__ void matrixMultiplyShared16(float *k, float *x, float *y,
+                                     const int B, const int M, const int C, const int H, const int W, const int K){
+
+  __shared__ float MdA[TILE_WIDTH_16][TILE_WIDTH_16];
+  __shared__ float MdB[TILE_WIDTH_16][TILE_WIDTH_16];
+
+  const int H_out = H - K + 1;
+  const int W_out = W - K + 1;
+
+  int bx = blockIdx.x, by = blockIdx.y, tx = threadIdx.x, ty = threadIdx.y, bz = blockIdx.z;
+  int row = by * TILE_WIDTH_16 + ty;
+  int col = bx * TILE_WIDTH_16 + tx;
+
+  int numAColumns = C*K*K;
+  int numCRows = M;
+  int numCColumns = H_out * W_out;
+
+  #define k4d(i3, i2, i1, i0) k[(i3) * (C * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
+  #define x4d(i3, i2, i1, i0) x[(i3) * (C * H * W) + (i2) * (H * W) + (i1) * (W) + i0]
+  #define y4d(i3, i2, i1, i0) y[(i3) * (M * H_out * W_out) + (i2) * (H_out * W_out) + (i1) * (W_out) + i0]
+
+  float pValue = 0.0;
+
+  for(int ph=0; ph < ceil(numAColumns*1.0/TILE_WIDTH_16); ph++){
+    
+    int temp_x = ph * TILE_WIDTH_16 + tx;
+    int temp_y = ph * TILE_WIDTH_16 + ty;
+
+    int k_c = temp_x / (K*K);
+    int k_h = temp_x % (K*K) / K;
+    int k_w = temp_x % (K*K) % K; 
+    int k_m = row;
+
+    if(k_m < M && k_c < C){
+      MdA[ty][tx] = k4d(k_m, k_c, k_h, k_w);
+    }
+    else{
+      MdA[ty][tx] = 0.0;
+    }
+
+    int x_b = bz;
+    int x_c = temp_y / (K*K);
+    int x_h = col / W_out;
+    int x_w = col % W_out; 
+    int x_p = temp_y % (K*K) / K;
+    int x_q = temp_y % (K*K) % K;
+
+    if(x_b < B && x_c < C && (x_h + x_p) < H && (x_w + x_q) < W){
+      MdB[ty][tx] = x4d(x_b, x_c, x_h + x_p, x_w + x_q);
+    }
+    else{
+      MdB[ty][tx] = 0.0;
+    }
+    __syncthreads();
+
+    for(int k=0; k<TILE_WIDTH_16; k++){
+        pValue += MdA[ty][k] * MdB[k][tx];
+    }
+    __syncthreads();
+  }
+  
+  if(row < numCRows && col < numCColumns){
+    int y_b = bz;
+    int y_m = row;
+    int y_h = (bx*TILE_WIDTH_16 + tx) / W_out;
+    int y_w = (bx*TILE_WIDTH_16 + tx) % W_out;
     
     if(y_b < B && y_m < M){
       y4d(y_b, y_m, y_h, y_w) = pValue;
@@ -108,9 +186,16 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
 
     int out_size = H_out * W_out;
 
-    dim3 blockDim(TILE_WIDTH, TILE_WIDTH, 1);
-    dim3 gridDim(ceil(out_size*1.0/TILE_WIDTH), ceil(M*1.0/TILE_WIDTH), B);
-    matrixMultiplyShared<<<gridDim, blockDim>>>(w.dptr_, x.dptr_, y.dptr_, B, M, C, H, W, K);
+    if(C == 1){
+        dim3 blockDim(TILE_WIDTH_16, TILE_WIDTH_16, 1);
+        dim3 gridDim(ceil(out_size*1.0/TILE_WIDTH_16), ceil(M*1.0/TILE_WIDTH_16), B);
+        matrixMultiplyShared16<<<gridDim, blockDim>>>(w.dptr_, x.dptr_, y.dptr_, B, M, C, H, W, K);
+    }
+    else{
+        dim3 blockDim(TILE_WIDTH_32, TILE_WIDTH_32, 1);
+        dim3 gridDim(ceil(out_size*1.0/TILE_WIDTH_32), ceil(M*1.0/TILE_WIDTH_32), B);
+        matrixMultiplyShared32<<<gridDim, blockDim>>>(w.dptr_, x.dptr_, y.dptr_, B, M, C, H, W, K);
+    }
 
     MSHADOW_CUDA_CALL(cudaDeviceSynchronize());
 }
