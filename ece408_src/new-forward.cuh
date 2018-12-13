@@ -1,7 +1,7 @@
 #ifndef MXNET_OPERATOR_NEW_FORWARD_CUH_
 #define MXNET_OPERATOR_NEW_FORWARD_CUH_
 
-#define TILE_WIDTH 32
+#define TILE_WIDTH 16
 
 #include <mxnet/base.h>
 
@@ -24,6 +24,8 @@ __global__ void matrixMultiplyShared(float *k, float *x, float *y,
   int col = bx * TILE_WIDTH + tx;
 
   int numAColumns = C*K*K;
+  int numCRows = M;
+  int numCColumns = H_out * W_out;
 
   #define k4d(i3, i2, i1, i0) k[(i3) * (C * K * K) + (i2) * (K * K) + (i1) * (K) + i0]
   #define x4d(i3, i2, i1, i0) x[(i3) * (C * H * W) + (i2) * (H * W) + (i1) * (W) + i0]
@@ -69,13 +71,15 @@ __global__ void matrixMultiplyShared(float *k, float *x, float *y,
     __syncthreads();
   }
   
-  int y_b = bz;
-  int y_m = row;
-  int y_h = (bx*TILE_WIDTH + tx) / W_out;
-  int y_w = (bx*TILE_WIDTH + tx) % W_out;
-
-  if(y_b < B && y_m < M){
-    y4d(y_b, y_m, y_h, y_w) = pValue;
+  if(row < numCRows && col < numCColumns){
+    int y_b = bz;
+    int y_m = row;
+    int y_h = (bx*TILE_WIDTH + tx) / W_out;
+    int y_w = (bx*TILE_WIDTH + tx) % W_out;
+    
+    if(y_b < B && y_m < M){
+      y4d(y_b, y_m, y_h, y_w) = pValue;
+    }
   }
 
   #undef y4d
