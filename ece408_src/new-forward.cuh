@@ -38,7 +38,7 @@ __global__ void matrixMultiplyShared(float *k, float *x, float *y,
 
     int k_c = temp_x / (K*K);
     int k_h = temp_x % (K*K) / K;
-    int k_w = temp_x % K; 
+    int k_w = temp_x % (K*K) % K; 
     int k_m = row;
 
     if(k_m < M && k_c < C){
@@ -47,7 +47,7 @@ __global__ void matrixMultiplyShared(float *k, float *x, float *y,
     else{
       MdA[ty][tx] = 0.0;
     }
-    
+
     int x_b = bz;
     int x_c = temp_y / (K*K);
     int x_h = col / W_out;
@@ -62,16 +62,13 @@ __global__ void matrixMultiplyShared(float *k, float *x, float *y,
       MdB[ty][tx] = 0.0;
     }
     __syncthreads();
-    
+
     for(int k=0; k<TILE_WIDTH; k++){
-      pValue += MdA[ty][k] * MdB[k][tx];
+        pValue += MdA[ty][k] * MdB[k][tx];
     }
     __syncthreads();
-    
   }
-
-  __syncthreads();
-    
+  
   int y_b = bz;
   int y_m = row;
   int y_h = (bx*TILE_WIDTH + tx) / W_out;
@@ -84,7 +81,6 @@ __global__ void matrixMultiplyShared(float *k, float *x, float *y,
   #undef y4d
   #undef x4d
   #undef k4d
-
 }
 
 /* 
@@ -109,7 +105,7 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
     int out_size = H_out * W_out;
 
     dim3 blockDim(TILE_WIDTH, TILE_WIDTH, 1);
-    dim3 gridDim(ceil(out_size*1.0/TILE_WIDTH), M, B);
+    dim3 gridDim(ceil(out_size*1.0/TILE_WIDTH), ceil(M*1.0/TILE_WIDTH), B);
     matrixMultiplyShared<<<gridDim, blockDim>>>(w.dptr_, x.dptr_, y.dptr_, B, M, C, H, W, K);
 
     MSHADOW_CUDA_CALL(cudaDeviceSynchronize());
