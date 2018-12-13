@@ -34,7 +34,6 @@ __global__ void matrixMultiplyShared16(float *k, float *x, float *y,
   #define x4d(i3, i2, i1, i0) x[(i3) * (C * H * W) + (i2) * (H * W) + (i1) * (W) + i0]
   #define y4d(i3, i2, i1, i0) y[(i3) * (M * H_out * W_out) + (i2) * (H_out * W_out) + (i1) * (W_out) + i0]
 
-  float pValue1 = 0.0;
   float pValue2 = 0.0;
 
   for(int ph=0; ph < ceil(numAColumns*1.0/TILE_WIDTH_16); ph++){
@@ -48,10 +47,10 @@ __global__ void matrixMultiplyShared16(float *k, float *x, float *y,
     int k_m = row;
 
     if(k_m < M && k_c < C){
-      MdA[ty][tx] = k4d(k_m, k_c, k_h, k_w);
-    }
+        MdA[ty][tx] = k4d(k_m, k_c, k_h, k_w);
+    } 
     else{
-      MdA[ty][tx] = 0.0;
+        MdA[ty][tx] = 0.0;
     }
 
     int x_b = bz;
@@ -64,24 +63,28 @@ __global__ void matrixMultiplyShared16(float *k, float *x, float *y,
     if(x_b < B && x_c < C && (x_h + x_p) < H && (x_w + x_q) < W){
       MdB[ty][tx] = x4d(x_b, x_c, x_h + x_p, x_w + x_q);
     }
+    
     else{
       MdB[ty][tx] = 0.0;
     }
+    
     __syncthreads();
-
-    for(int k=0; k<TILE_WIDTH_16; k++){
-        pValue1 += MdA[ty][k] * MdB[k][tx];
-    }
     
     MdTemp[ty][tx][2*tz] = MdA[ty][2*tz] * MdB[2*tz][tx];
     MdTemp[ty][tx][2*tz + 1] = MdA[ty][2*tz + 1] * MdB[2*tz + 1][tx];
     __syncthreads();
 
-    for(int k = 0; k < 8; k++){
-      pValue2 += MdTemp[ty][tx][k];
+    int stride = 1;
+    while(stride < 8){
+      __syncthreads();
+      int index = (tz + 1)*stride*2 - 1;
+      if(index < 8 && (index - stride) >= 0){
+        MdTemp[ty][tx][index] += MdTemp[ty][tx][index-stride];
+      }
+      stride *= 2;
     }
-
-    //printf("pValue1 = %f pValue2 = %f \n", pValue1, pValue2);
+    __syncthreads();
+    pValue2 += MdTemp[ty][tx][7];
     __syncthreads();
   }
   
