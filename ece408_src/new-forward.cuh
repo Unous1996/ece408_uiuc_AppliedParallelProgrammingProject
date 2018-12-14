@@ -22,7 +22,9 @@ __global__ void matrixMultiplyShared32(float *k, float *x, float *y,
 
   int bx = blockIdx.x, by = blockIdx.y, tx = threadIdx.x, ty = threadIdx.y, bz = blockIdx.z;
   int row = by * TILE_WIDTH_32 + ty;
-  int col = bx * TILE_WIDTH_32 + tx;
+
+  int col1 = bx * TILE_WIDTH_32 + 2*tx;
+  int col2 = bx * TILE_WIDTH_32 + 2*tx + 1;
 
   int numAColumns = C*K*K;
   int numCRows = M;
@@ -32,55 +34,99 @@ __global__ void matrixMultiplyShared32(float *k, float *x, float *y,
   #define x4d(i3, i2, i1, i0) x[(i3) * (C * H * W) + (i2) * (H * W) + (i1) * (W) + i0]
   #define y4d(i3, i2, i1, i0) y[(i3) * (M * H_out * W_out) + (i2) * (H_out * W_out) + (i1) * (W_out) + i0]
 
-  float pValue = 0.0;
-
-  for(int ph=0; ph < ceil(numAColumns*1.0/TILE_WIDTH_32); ph++){
-    
-    int temp_x = ph * TILE_WIDTH_32 + tx;
+  float pValue1 = 0.0;
+  float pValue2 = 0.0;
+  int max_phases = ceil(numAColumns*1.0/TILE_WIDTH_32);
+  
+  for(int ph=0; ph < max_phases; ph++){  
     int temp_y = ph * TILE_WIDTH_32 + ty;
 
-    int k_c = temp_x / (K*K);
-    int k_h = temp_x % (K*K) / K;
-    int k_w = temp_x % (K*K) % K; 
-    int k_m = row;
+    int temp_x1 = ph * TILE_WIDTH_32 + 2*tx;
+    int temp_x2 = ph * TILE_WIDTH_32 + 2*tx + 1;
 
-    if(k_m < M && k_c < C){
-      MdA[ty][tx] = k4d(k_m, k_c, k_h, k_w);
+    int k_c1 = temp_x1 / (K*K);
+    int k_h1 = temp_x1 % (K*K) / K;
+    int k_w1 = temp_x1 % (K*K) % K; 
+    int k_m1 = row;
+
+    int k_c2 = temp_x2 / (K*K);
+    int k_h2 = temp_x2 % (K*K) / K;
+    int k_w2 = temp_x2 % (K*K) % K; 
+    int k_m2 = k_m1;
+
+    if(k_m1 < M && k_c1 < C){
+      MdA[ty][2*tx] = k4d(k_m1, k_c1, k_h1, k_w1);
     }
     else{
-      MdA[ty][tx] = 0.0;
+      MdA[ty][2*tx] = 0.0;
     }
 
-    int x_b = bz;
-    int x_c = temp_y / (K*K);
-    int x_h = col / W_out;
-    int x_w = col % W_out; 
-    int x_p = temp_y % (K*K) / K;
-    int x_q = temp_y % (K*K) % K;
-
-    if(x_b < B && x_c < C && (x_h + x_p) < H && (x_w + x_q) < W){
-      MdB[ty][tx] = x4d(x_b, x_c, x_h + x_p, x_w + x_q);
+    if(k_m2 < M && k_c2 < C){
+      MdA[ty][2*tx+1] = k4d(k_m2, k_c2, k_h2, k_w2);
     }
     else{
-      MdB[ty][tx] = 0.0;
+      MdA[ty][2*tx+1] = 0.0;
+    }
+
+    int x_b1 = bz;
+    int x_c1 = temp_y / (K*K);
+    int x_h1 = col1 / W_out;
+    int x_w1 = col1 % W_out; 
+    int x_p1 = temp_y % (K*K) / K;
+    int x_q1 = temp_y % (K*K) % K;
+
+    int x_b2 = bz;
+    int x_c2 = temp_y / (K*K);
+    int x_h2 = col2 / W_out;
+    int x_w2 = col2 % W_out; 
+    int x_p2 = temp_y % (K*K) / K;
+    int x_q2 = temp_y % (K*K) % K;
+
+    if(x_b1 < B && x_c1 < C && (x_h1 + x_p1) < H && (x_w1 + x_q1) < W){
+      MdB[ty][2*tx] = x4d(x_b1, x_c1, x_h1 + x_p1, x_w1 + x_q1);
+    }
+    else{
+      MdB[ty][2*tx] = 0.0;
+    }
+
+    if(x_b2 < B && x_c2 < C && (x_h2 + x_p2) < H && (x_w2 + x_q2) < W){
+      MdB[ty][2*tx+1] = x4d(x_b2, x_c2, x_h2 + x_p2, x_w2 + x_q2);
+    }
+    else{
+      MdB[ty][2*tx+1] = 0.0;
     }
     __syncthreads();
 
     for(int k=0; k<TILE_WIDTH_32; k++){
-        pValue += MdA[ty][k] * MdB[k][tx];
+        pValue1 += MdA[ty][k] * MdB[k][2*tx];
+        pValue2 += MdA[ty][k] * MdB[k][2*tx+1];
     }
     __syncthreads();
+
   }
   
-  if(row < numCRows && col < numCColumns){
-    int y_b = bz;
-    int y_m = row;
-    int y_h = (bx*TILE_WIDTH_32 + tx) / W_out;
-    int y_w = (bx*TILE_WIDTH_32 + tx) % W_out;
+  if(row < numCRows && col1 < numCColumns){
+
+    int y_b1 = bz;
+    int y_m1 = row;
+    int y_h1 = col1 / W_out;
+    int y_w1 = col1 % W_out;
     
-    if(y_b < B && y_m < M){
-      y4d(y_b, y_m, y_h, y_w) = pValue;
+    if(y_b1 < B && y_m1 < M){
+      y4d(y_b1, y_m1, y_h1, y_w1) = pValue1;
     }
+
+  }
+
+  if(row < numCRows && col2 < numCColumns){
+    int y_b2 = bz;
+    int y_m2 = row;
+    int y_h2 = col2 / W_out;
+    int y_w2 = col2 % W_out;
+    if(y_b2 < B && y_m2 < M){
+      y4d(y_b2, y_m2, y_h2, y_w2) = pValue2;
+    }
+
   }
 
   #undef y4d
@@ -99,7 +145,9 @@ __global__ void matrixMultiplyShared16(float *k, float *x, float *y,
 
   int bx = blockIdx.x, by = blockIdx.y, tx = threadIdx.x, ty = threadIdx.y, bz = blockIdx.z;
   int row = by * TILE_WIDTH_16 + ty;
-  int col = bx * TILE_WIDTH_16 + tx;
+
+  int col1 = bx * TILE_WIDTH_16 + 2*tx;
+  int col2 = bx * TILE_WIDTH_16 + 2*tx + 1;
 
   int numAColumns = C*K*K;
   int numCRows = M;
@@ -109,55 +157,100 @@ __global__ void matrixMultiplyShared16(float *k, float *x, float *y,
   #define x4d(i3, i2, i1, i0) x[(i3) * (C * H * W) + (i2) * (H * W) + (i1) * (W) + i0]
   #define y4d(i3, i2, i1, i0) y[(i3) * (M * H_out * W_out) + (i2) * (H_out * W_out) + (i1) * (W_out) + i0]
 
-  float pValue = 0.0;
+  float pValue1 = 0.0;
+  float pValue2 = 0.0;
+  int max_phases = ceil(numAColumns*1.0/TILE_WIDTH_16);
+  
+  for(int ph=0; ph < max_phases; ph++){  
 
-  for(int ph=0; ph < ceil(numAColumns*1.0/TILE_WIDTH_16); ph++){
-    
-    int temp_x = ph * TILE_WIDTH_16 + tx;
     int temp_y = ph * TILE_WIDTH_16 + ty;
 
-    int k_c = temp_x / (K*K);
-    int k_h = temp_x % (K*K) / K;
-    int k_w = temp_x % (K*K) % K; 
-    int k_m = row;
+    int temp_x1 = ph * TILE_WIDTH_16 + 2*tx;
+    int temp_x2 = ph * TILE_WIDTH_16 + 2*tx + 1;
 
-    if(k_m < M && k_c < C){
-      MdA[ty][tx] = k4d(k_m, k_c, k_h, k_w);
+    int k_c1 = temp_x1 / (K*K);
+    int k_h1 = temp_x1 % (K*K) / K;
+    int k_w1 = temp_x1 % (K*K) % K; 
+    int k_m1 = row;
+
+    int k_c2 = temp_x2 / (K*K);
+    int k_h2 = temp_x2 % (K*K) / K;
+    int k_w2 = temp_x2 % (K*K) % K; 
+    int k_m2 = k_m1;
+
+    if(k_m1 < M && k_c1 < C){
+      MdA[ty][2*tx] = k4d(k_m1, k_c1, k_h1, k_w1);
     }
     else{
-      MdA[ty][tx] = 0.0;
+      MdA[ty][2*tx] = 0.0;
     }
 
-    int x_b = bz;
-    int x_c = temp_y / (K*K);
-    int x_h = col / W_out;
-    int x_w = col % W_out; 
-    int x_p = temp_y % (K*K) / K;
-    int x_q = temp_y % (K*K) % K;
-
-    if(x_b < B && x_c < C && (x_h + x_p) < H && (x_w + x_q) < W){
-      MdB[ty][tx] = x4d(x_b, x_c, x_h + x_p, x_w + x_q);
+    if(k_m2 < M && k_c2 < C){
+      MdA[ty][2*tx+1] = k4d(k_m2, k_c2, k_h2, k_w2);
     }
     else{
-      MdB[ty][tx] = 0.0;
+      MdA[ty][2*tx+1] = 0.0;
+    }
+
+    int x_b1 = bz;
+    int x_c1 = temp_y / (K*K);
+    int x_h1 = col1 / W_out;
+    int x_w1 = col1 % W_out; 
+    int x_p1 = temp_y % (K*K) / K;
+    int x_q1 = temp_y % (K*K) % K;
+
+    int x_b2 = bz;
+    int x_c2 = temp_y / (K*K);
+    int x_h2 = col2 / W_out;
+    int x_w2 = col2 % W_out; 
+    int x_p2 = temp_y % (K*K) / K;
+    int x_q2 = temp_y % (K*K) % K;
+
+    if(x_b1 < B && x_c1 < C && (x_h1 + x_p1) < H && (x_w1 + x_q1) < W){
+      MdB[ty][2*tx] = x4d(x_b1, x_c1, x_h1 + x_p1, x_w1 + x_q1);
+    }
+    else{
+      MdB[ty][2*tx] = 0.0;
+    }
+
+    if(x_b2 < B && x_c2 < C && (x_h2 + x_p2) < H && (x_w2 + x_q2) < W){
+      MdB[ty][2*tx+1] = x4d(x_b2, x_c2, x_h2 + x_p2, x_w2 + x_q2);
+    }
+    else{
+      MdB[ty][2*tx+1] = 0.0;
     }
     __syncthreads();
 
     for(int k=0; k<TILE_WIDTH_16; k++){
-        pValue += MdA[ty][k] * MdB[k][tx];
+        pValue1 += MdA[ty][k] * MdB[k][2*tx];
+        pValue2 += MdA[ty][k] * MdB[k][2*tx+1];
     }
     __syncthreads();
+
   }
   
-  if(row < numCRows && col < numCColumns){
-    int y_b = bz;
-    int y_m = row;
-    int y_h = (bx*TILE_WIDTH_16 + tx) / W_out;
-    int y_w = (bx*TILE_WIDTH_16 + tx) % W_out;
+  if(row < numCRows && col1 < numCColumns){
+
+    int y_b1 = bz;
+    int y_m1 = row;
+    int y_h1 = col1 / W_out;
+    int y_w1 = col1 % W_out;
     
-    if(y_b < B && y_m < M){
-      y4d(y_b, y_m, y_h, y_w) = pValue;
+    if(y_b1 < B && y_m1 < M){
+      y4d(y_b1, y_m1, y_h1, y_w1) = pValue1;
     }
+
+  }
+
+  if(row < numCRows && col2 < numCColumns){
+    int y_b2 = bz;
+    int y_m2 = row;
+    int y_h2 = col2 / W_out;
+    int y_w2 = col2 % W_out;
+    if(y_b2 < B && y_m2 < M){
+      y4d(y_b2, y_m2, y_h2, y_w2) = pValue2;
+    }
+
   }
 
   #undef y4d
@@ -187,12 +280,12 @@ void forward<gpu, float>(mshadow::Tensor<gpu, 4, float> &y, const mshadow::Tenso
     int out_size = H_out * W_out;
 
     if(C == 1){
-        dim3 blockDim(TILE_WIDTH_16, TILE_WIDTH_16, 1);
+        dim3 blockDim(TILE_WIDTH_16/2, TILE_WIDTH_16, 1);
         dim3 gridDim(ceil(out_size*1.0/TILE_WIDTH_16), ceil(M*1.0/TILE_WIDTH_16), B);
         matrixMultiplyShared16<<<gridDim, blockDim>>>(w.dptr_, x.dptr_, y.dptr_, B, M, C, H, W, K);
     }
     else{
-        dim3 blockDim(TILE_WIDTH_32, TILE_WIDTH_32, 1);
+        dim3 blockDim(TILE_WIDTH_32/2, TILE_WIDTH_32, 1);
         dim3 gridDim(ceil(out_size*1.0/TILE_WIDTH_32), ceil(M*1.0/TILE_WIDTH_32), B);
         matrixMultiplyShared32<<<gridDim, blockDim>>>(w.dptr_, x.dptr_, y.dptr_, B, M, C, H, W, K);
     }
